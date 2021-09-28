@@ -1,0 +1,177 @@
+---
+title: "POLISCI 218X Assignment 1"
+author: "Kayla Williams"
+date: "9/28/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+```{r}
+knitr::opts_chunk$set(echo = F)
+
+```
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(zoo)
+library(dplyr)
+library(broom)
+```
+
+```{r}
+#create empty container 
+pge_elec = NULL
+``` 
+
+```{r}
+#create a function that creates a dataframe for electric data given the year
+#and quarters
+elecyeardf = function(year, quarters) {
+  type = "Electric"
+  for(quarter in quarters) {
+    filename = paste0("pge/PGE_", year, "_Q", quarter, "_", type, "UsageByZip.csv")
+    print(filename)
+    temp = read_csv(filename)
+    pge_elec = rbind(pge_elec,temp)
+    saveRDS(pge_elec, "pge_elec.rds")
+  }
+  return(pge_elec)
+}
+```
+
+```{r}
+pge_elec = rbind(elecyeardf(2017, 1:4), elecyeardf(2018, 1:4), elecyeardf(2019, 1:4), elecyeardf(2020, 1:2))
+```
+
+```{r}
+pge_elec
+```
+
+```{r}
+#create empty container 
+pge_gas = NULL
+``` 
+
+```{r}
+#create a function that creates a dataframe for gas data given the year
+#and quarters
+gasyeardf = function(year, quarters) {
+  type2 = "Gas"
+  for(quarter in quarters) {
+    filename = paste0("pge/PGE_", year, "_Q", quarter, "_", type2, "UsageByZip.csv")
+    print(filename)
+    temp = read_csv(filename)
+    pge_gas = rbind(pge_gas,temp)
+    saveRDS(pge_gas, "pge_gas.rds")
+  }
+  return(pge_gas)
+}
+```
+
+```{r}
+pge_gas = rbind(gasyeardf(2017, 1:4), gasyeardf(2018, 1:4), gasyeardf(2019, 1:4), gasyeardf(2020, 1:2))
+```
+
+```{r}
+pge_gas = mutate(pge_gas, DATE = as.yearmon(paste(pge_gas$YEAR, pge_gas$MONTH), "%Y %m"))
+pge_gas = mutate(pge_gas, KBTUs = pge_gas$TOTALTHM *100)
+```
+
+```{r}
+pge_elec = mutate(pge_elec, DATE = as.yearmon(paste(pge_elec$YEAR, pge_elec$MONTH),"%Y %m"))
+pge_elec = mutate(pge_elec, KBTUs = pge_elec$TOTALKWH * 3.4121416)
+```
+
+```{r}
+filtergas = pge_gas %>% select(DATE, KBTUs, CUSTOMERCLASS)
+filterelec = pge_elec %>% select(DATE, KBTUs, CUSTOMERCLASS)
+```
+
+```{r}
+filtergpe = rbind(filtergas, filterelec)
+```
+
+```{r}
+res = filtergpe %>% filter(CUSTOMERCLASS %in% c("Elec- Residential", "Gas- Residential"))
+comm = filtergpe %>% filter(CUSTOMERCLASS %in% c("Elec- Commercial", "Gas- Commercial"))
+```
+
+```{r}
+reskbtus = res %>% group_by(DATE, CUSTOMERCLASS) %>% 
+  summarize(TOTALKBTUs = sum(KBTUs, na.rm = T)) %>%
+  ungroup()
+```
+```{r}
+ResidentialKBTUs = reskbtus %>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x = DATE,
+      y = TOTALKBTUs,
+      fill = CUSTOMERCLASS
+     ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Month",
+    y = "kBTUs",
+    title ="PG&E Residential Monthly Gas and Elecricity Usage", 
+    fill = "Electricity Type"
+  )
+
+  
+ResidentialKBTUs
+```
+
+```{r}
+commkbtus = comm %>% group_by(DATE, CUSTOMERCLASS) %>%
+  summarize(TOTALKBTUs = sum(KBTUs, na.rm = T)) %>%
+  ungroup()
+```
+
+```{r}
+CommercialKBTUs = commkbtus %>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x = DATE,
+      y = TOTALKBTUs,
+      fill = CUSTOMERCLASS
+    ),
+    stat = "identity",
+    position = "stack"
+  ) +
+  labs(
+    x = "Month",
+    y = "kBTUs",
+    title = "PG&E Commercial Monthly Gas and Elecricity Usage ",
+    fill = "Electricity Type"
+  )
+CommercialKBTUs
+```
+
+```{r}
+res$interven = 0
+res = res %>%
+  mutate(interven = ifelse(DATE >"Mar 2020", (interven = 1), (interven = 0)))
+fitted_models = res %>%
+  group_by(CUSTOMERCLASS) %>%
+ do(model = lm(res$KBTUs ~ res$interven, data = .))
+fitted_models$model
+```
+```{r}
+comm$interven = 0
+comm = comm %>%
+  mutate(interven = ifelse(DATE >"Mar 2020", (interven = 1), (interven = 0 )))
+fitted_models2 = comm %>%
+  group_by(CUSTOMERCLASS) %>%
+ do(model = lm(comm$KBTUs ~ comm$interven, data = .))
+fitted_models2$model
+```
+
+Both models show that measurements taken after the start of the pandemic
+(documented as anything after March 2020), are lower on average than those taken before,
+highlighting drops in electricity and gas usage.
+
+This summary doesn't include p values or residuals, however.
