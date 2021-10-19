@@ -1,0 +1,138 @@
+---
+title: "KaylaWilliams_A4"
+author: "Kayla Williams"
+date: "10/12/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(censusapi)
+Sys.setenv(CENSUS_KEY = "e7f4fdf1cb4024223aeaafafa8d8943523ddcefb")
+```
+```{r}
+acs_vars_2019_5yr <-
+  listCensusMetadata(
+    name = "2019/acs/acs5",
+    type = "variables"
+  )
+```
+
+```{r}
+race_categories = c("White Alone", "Black or African American Alone", "American Indian and Alaska Native Alone", "Asian Alone", "Native Hawaiian and Other Pacific Islander Alone", "Some Other Race Alone", "Some Other Race Alone")
+bay_educational_attainment_race_2019 = 
+  1:7 %>%
+  #assign 1-7 to x
+  map_dfr(function(x){
+    
+    getCensus(
+  name = "acs/acs5", 
+  vintage= "2019", 
+  region = "county: 001, 013, 041, 055, 075, 081, 085, 095, 097",
+  regionin = "state:06", 
+  vars = paste0("group(C15002", LETTERS[x], ")")
+) %>% 
+  select(ends_with("E") &-c(state, NAME)) %>% 
+  summarize_all(sum) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "name", 
+    values_to ="estimate"
+  ) %>% left_join(acs_vars_2019_5yr %>%
+                    select(name,label)
+                  )%>%
+  separate(
+    label,
+    into = c(NA, NA, "sex", "education"),
+    sep = "!!"
+  ) %>%
+  select(-name) %>%
+  filter(!is.na(education)) %>%
+      group_by(education) %>%
+  summarise(estimate = sum(estimate)) %>%
+  mutate(race= race_categories[x])
+    
+  })
+```
+```{r}
+schoolorder = c("Bachelor's degree or higher", "Some college or associate's degree", "High school graduate (includes equivalency)", "Less than high school diploma")
+
+bay_race_total = 
+  bay_educational_attainment_race_2019 %>% 
+  group_by(race) %>%
+  summarise(estimate = sum(estimate)) %>%
+  mutate(education = "Total")
+```
+```{r}
+#PROPORTION 
+bay_educational_attainment_race_2019 %>%
+  group_by(education, race) %>% 
+  summarize(estimate = sum(estimate)) %>%
+  rbind(bay_race_total) %>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x= education %>% factor(levels = rev(c("Total", unique(schoolorder)))),
+      y = estimate, 
+      fill = race %>% factor(levels = rev(unique(bay_educational_attainment_race_2019$race)))
+    ),  
+      stat = "identity",
+      position = "fill"
+    ) + 
+      labs(
+        x = "Educational Attainment",
+        y = "Number of Individuals",
+        title = "Bay Area Educational Attainment by Race",
+        fill = "Race"
+      ) + 
+      coord_flip() + 
+  theme(legend.position = "bottom", 
+        legend.direction = "vertical")
+```
+```{r}
+#COUNTS
+bay_educational_attainment_race_2019 %>%
+  group_by(education, race) %>% 
+  summarize(estimate = sum(estimate)) %>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x= education %>% factor(levels = rev(unique(schoolorder))),
+      y = estimate, 
+      fill = race %>% factor(levels = rev(unique(bay_educational_attainment_race_2019$race)))
+    ),  
+      stat = "identity",
+      position = "stack"
+    ) + 
+      labs(
+        x = "Educational Attainment",
+        y = "Number of Individuals",
+        title = "Bay Area Educational Attainment by Race",
+        fill = "Race"
+      ) + 
+      coord_flip() + 
+  theme(legend.position = "bottom",
+        legend.direction = "vertical")
+  
+```
+ 
+ The two graphs, especially the "fill" version which highlights the
+ proportions of races within each educational attainment level, as opposed to 
+ raw counts, suggest that there is indeed inequity within education outcomes.
+ 
+ In an ideally equal world, the breakdown of educational achievement by race 
+ would mirror the proportions seen in the population breakdown by race. That is 
+ to say that the percentages of each race in a bucket of schooling levels would 
+ be nearly equal to that race's percentage of the population, as this would
+ signify eqqual representation. However, the graph of proportions highlights that 
+ Black people, for instance, are heavily overrepresented in the population of
+ folks with less than a high school diploma and underrepresented in the 
+ population of those with bachelor's degrees and higher as their fractions in
+ these two buckets vary from their fraction of the overall population.
+ 
+ White and Asian populations, in contrast, are slightly overrepresented in 
+ those with higher degrees and white people are also pretty significantly 
+ underrepresented amongst those without high school diplomas. 
+
+
+
